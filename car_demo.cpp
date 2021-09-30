@@ -1,5 +1,6 @@
 #include "test.h"
 #include <vector>
+#include <string>
 
 #ifndef _USE_MATH_DEFINES
 #define _USE_MATH_DEFINES
@@ -28,30 +29,70 @@ public:
 
 	void update()
 	{
-		// lateral velocity murder so floating around doesn't happen
 		const b2Vec2 currentRightNormal = m_body->GetWorldVector( b2Vec2( 1, 0 ) );
 		const float lateralVelocity = b2Dot( currentRightNormal, m_body->GetLinearVelocity() );
-		const b2Vec2 lateralVelocityVector = lateralVelocity * currentRightNormal;
-		
-		const b2Vec2 impulse = m_body->GetMass() * -lateralVelocityVector;
-		m_body->ApplyLinearImpulse( impulse, m_body->GetWorldCenter(), true );
+		b2Vec2 lateralVelocityVector = lateralVelocity * currentRightNormal;
+
+		m_lastLateralVelocityVector = lateralVelocityVector;
+
+		// FIXME: LH:	need to find a way to gradually reduce existing lateral velocity
+		//				so car doesn't have perfect traction as soon as you release the shift key
+
+		if ( glfwGetKey( g_mainWindow, GLFW_KEY_LEFT_SHIFT ) != GLFW_PRESS )
+		{
+			// remove lateral velocity, so car doesn't skid around
+			b2Vec2 impulse = m_body->GetMass() * -lateralVelocityVector;
+
+			//if ( glfwGetKey( g_mainWindow, GLFW_KEY_LEFT_SHIFT ) == GLFW_PRESS && !m_canTurn )
+			//{
+			//	if ( impulse.Length() > m_maxLateralVelocity )
+			//	{
+			//		impulse *= m_maxLateralVelocity / impulse.Length();
+			//	}
+			//}
+
+			m_body->ApplyLinearImpulse( impulse, m_body->GetWorldCenter(), true );
+		}
+		else
+		{
+			// FIXME: LH:	this works, until the inverse impulse overcorrects, causing another spin
+
+			// apply side-drag to avoid skidding off into space
+			
+			const float currentSidewaysSpeed = lateralVelocityVector.Normalize();
+
+			if ( currentSidewaysSpeed > 0 )
+			{
+				const float dragMagnitude = -2 * currentSidewaysSpeed;
+
+				const b2Vec2 sideImpulse = dragMagnitude * currentRightNormal;
+				m_body->ApplyForce( sideImpulse, m_body->GetWorldCenter(), true );
+			}
+		}
+
 
 		// apply drag
 		b2Vec2 currentForwardNormal = m_body->GetWorldVector( b2Vec2( 0, 1 ) );
-		b2Dot( currentForwardNormal, m_body->GetLinearVelocity() ) * currentForwardNormal;
+		const float forwardVelocity = b2Dot( currentForwardNormal, m_body->GetLinearVelocity() ) ;
 
-		const float currentForwardSpeed = currentForwardNormal.Normalize();
+		b2Vec2 forwardVelocityVector = forwardVelocity * currentForwardNormal;
+
+		const float currentForwardSpeed = forwardVelocityVector.Normalize();
 		const float dragForceMagnitude = -2 * currentForwardSpeed;
 		m_body->ApplyForce( dragForceMagnitude * currentForwardNormal, m_body->GetWorldCenter(), true );
 
 		// apply directional force, based on input;
 		// Note: can optimise this by passing turn state, after handling input in the car's update().
 
-		if ( glfwGetKey( g_mainWindow, GLFW_KEY_W ) == GLFW_PRESS )
+
+		if ( glfwGetKey( g_mainWindow, GLFW_KEY_LEFT_SHIFT ) != GLFW_PRESS )
 		{
-			b2Vec2 force = m_body->GetWorldVector( b2Vec2( 0.0f, m_forwardForce ) );
-			b2Vec2 point = m_body->GetWorldPoint( b2Vec2( 0.0f, -3.0f ) );
-			m_body->ApplyForce( force, point, true );
+			if ( glfwGetKey( g_mainWindow, GLFW_KEY_W ) == GLFW_PRESS )
+			{
+				b2Vec2 force = m_body->GetWorldVector( b2Vec2( 0.0f, m_forwardForce ) );
+				b2Vec2 point = m_body->GetWorldPoint( b2Vec2( 0.0f, -3.0f ) );
+				m_body->ApplyForce( force, point, true );
+			}
 		}
 
 		if ( m_canTurn )
@@ -67,23 +108,29 @@ public:
 			}
 		}
 
-		if ( glfwGetKey( g_mainWindow, GLFW_KEY_S ) == GLFW_PRESS )
+		if ( glfwGetKey( g_mainWindow, GLFW_KEY_LEFT_SHIFT ) != GLFW_PRESS )
 		{
-			const b2Vec2 force = m_body->GetWorldVector( b2Vec2( 0.0f, m_backwardForce ) );
-			const b2Vec2 point = m_body->GetWorldPoint( b2Vec2( 0.0f, 3.0f ) );
-			m_body->ApplyForce( force, point, true );
+			if ( glfwGetKey( g_mainWindow, GLFW_KEY_S ) == GLFW_PRESS )
+			{
+				const b2Vec2 force = m_body->GetWorldVector( b2Vec2( 0.0f, m_backwardForce ) );
+				const b2Vec2 point = m_body->GetWorldPoint( b2Vec2( 0.0f, 3.0f ) );
+				m_body->ApplyForce( force, point, true );
+			}
 		}
-
 	}
 
 	b2Body* m_body;
 	bool	m_canTurn{ false };
 
-private:
-	float m_forwardForce{ 50 };
-	float m_backwardForce{ -30 };
+	b2Vec2	m_lastLateralVelocityVector;
 
-	float m_turnForce{ 10 };
+private:
+	float m_forwardForce{ 150 };
+	float m_backwardForce{ -40 };
+
+	float m_turnForce{ 15 };
+
+	float m_maxLateralVelocity{ 2 };
 };
 
 class Car
@@ -227,7 +274,10 @@ public:
 			sd.restitution = k_restitution;
 
 			// Left vertical
-			shape.SetTwoSided( b2Vec2( -40.0f, -40.0f ), b2Vec2( -40.0f, 40.0f ) );
+			shape.SetTwoSided( b2Vec2( -80.0f, -40.0f ), b2Vec2( -80.0f, 80.0f ) );
+			ground->CreateFixture( &sd );
+
+			shape.SetTwoSided( b2Vec2( -10.0f, -10.0f ), b2Vec2( -10.0f, 10.0f ) );
 			ground->CreateFixture( &sd );
 
 			// Right vertical
@@ -254,6 +304,15 @@ public:
 		m_textLine += m_textIncrement;
 
 		m_car->update();
+
+		uint8_t index{ 0 };
+		for ( Tire* tire : m_car->m_tires )
+		{	
+			g_debugDraw.DrawString( 6 + index, m_textLine, "Current lateralVelocityVector for car %d: %.3f, %.3f", index, tire->m_lastLateralVelocityVector.x, tire->m_lastLateralVelocityVector.y );
+			m_textLine += m_textIncrement;
+
+			g_debugDraw.DrawSegment( tire->m_body->GetPosition(), tire->m_body->GetPosition() + tire->m_lastLateralVelocityVector, b2Color( 255, 1, 1 ) );
+		}
 
 		Test::Step( settings );
 	}
