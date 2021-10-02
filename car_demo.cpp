@@ -31,45 +31,21 @@ public:
 	{
 		const b2Vec2 currentRightNormal = m_body->GetWorldVector( b2Vec2( 1, 0 ) );
 		const float lateralVelocity = b2Dot( currentRightNormal, m_body->GetLinearVelocity() );
+
+		float lateralVelocityReduction{ 0.9 };
+
+		if( glfwGetKey( g_mainWindow, GLFW_KEY_LEFT_SHIFT ) == GLFW_PRESS )
+		{
+			lateralVelocityReduction = 0.05;
+		}
+
 		b2Vec2 lateralVelocityVector = lateralVelocity * currentRightNormal;
+		b2Vec2 scaledLateralVelocityVector = lateralVelocityReduction * lateralVelocityVector;
+
+		b2Vec2 impulse = m_body->GetMass() * -scaledLateralVelocityVector;
+		m_body->ApplyLinearImpulse( impulse, m_body->GetWorldCenter(), true );
 
 		m_lastLateralVelocityVector = lateralVelocityVector;
-
-		// FIXME: LH:	need to find a way to gradually reduce existing lateral velocity
-		//				so car doesn't have perfect traction as soon as you release the shift key
-
-		if ( glfwGetKey( g_mainWindow, GLFW_KEY_LEFT_SHIFT ) != GLFW_PRESS )
-		{
-			// remove lateral velocity, so car doesn't skid around
-			b2Vec2 impulse = m_body->GetMass() * -lateralVelocityVector;
-
-			//if ( glfwGetKey( g_mainWindow, GLFW_KEY_LEFT_SHIFT ) == GLFW_PRESS && !m_canTurn )
-			//{
-			//	if ( impulse.Length() > m_maxLateralVelocity )
-			//	{
-			//		impulse *= m_maxLateralVelocity / impulse.Length();
-			//	}
-			//}
-
-			m_body->ApplyLinearImpulse( impulse, m_body->GetWorldCenter(), true );
-		}
-		else
-		{
-			// FIXME: LH:	this works, until the inverse impulse overcorrects, causing another spin
-
-			// apply side-drag to avoid skidding off into space
-			
-			const float currentSidewaysSpeed = lateralVelocityVector.Normalize();
-
-			if ( currentSidewaysSpeed > 0 )
-			{
-				const float dragMagnitude = -2 * currentSidewaysSpeed;
-
-				const b2Vec2 sideImpulse = dragMagnitude * currentRightNormal;
-				m_body->ApplyForce( sideImpulse, m_body->GetWorldCenter(), true );
-			}
-		}
-
 
 		// apply drag
 		b2Vec2 currentForwardNormal = m_body->GetWorldVector( b2Vec2( 0, 1 ) );
@@ -80,10 +56,6 @@ public:
 		const float currentForwardSpeed = forwardVelocityVector.Normalize();
 		const float dragForceMagnitude = -2 * currentForwardSpeed;
 		m_body->ApplyForce( dragForceMagnitude * currentForwardNormal, m_body->GetWorldCenter(), true );
-
-		// apply directional force, based on input;
-		// Note: can optimise this by passing turn state, after handling input in the car's update().
-
 
 		if ( glfwGetKey( g_mainWindow, GLFW_KEY_LEFT_SHIFT ) != GLFW_PRESS )
 		{
