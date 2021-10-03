@@ -27,27 +27,32 @@ public:
 		m_body->GetWorld()->DestroyBody( m_body );
 	}
 
-	void update()
+	void update( bool showDebug )
 	{
+		// Reduce lateral velocity to avoid the zero-gravity-spinning-into-space effect
+		// (reduce to almost zero instead of removing it altogether, as the latter
+		// makes implementing drifting much more complicated and also creates this
+		// very jarring effect of instant traction once the player releases the drift button)
 		const b2Vec2 currentRightNormal = m_body->GetWorldVector( b2Vec2( 1, 0 ) );
 		const float lateralVelocity = b2Dot( currentRightNormal, m_body->GetLinearVelocity() );
 
-		float lateralVelocityReduction{ 0.9 };
-
+		float reductionCoefficient{ 0.9f };
 		if( glfwGetKey( g_mainWindow, GLFW_KEY_LEFT_SHIFT ) == GLFW_PRESS )
 		{
-			lateralVelocityReduction = 0.05;
+			reductionCoefficient = 0.05f;
 		}
 
-		b2Vec2 lateralVelocityVector = lateralVelocity * currentRightNormal;
-		b2Vec2 scaledLateralVelocityVector = lateralVelocityReduction * lateralVelocityVector;
-
-		b2Vec2 impulse = m_body->GetMass() * -scaledLateralVelocityVector;
+		const b2Vec2 scaledLateralVelocityVector = reductionCoefficient * lateralVelocity * currentRightNormal;
+		const b2Vec2 impulse = m_body->GetMass() * -scaledLateralVelocityVector;
 		m_body->ApplyLinearImpulse( impulse, m_body->GetWorldCenter(), true );
 
-		m_lastLateralVelocityVector = lateralVelocityVector;
 
-		// apply drag
+		if ( showDebug )
+		{
+			m_lastLateralVelocityVector = scaledLateralVelocityVector;
+		}
+
+		// apply backwards drag
 		b2Vec2 currentForwardNormal = m_body->GetWorldVector( b2Vec2( 0, 1 ) );
 		const float forwardVelocity = b2Dot( currentForwardNormal, m_body->GetLinearVelocity() ) ;
 
@@ -57,12 +62,20 @@ public:
 		const float dragForceMagnitude = -2 * currentForwardSpeed;
 		m_body->ApplyForce( dragForceMagnitude * currentForwardNormal, m_body->GetWorldCenter(), true );
 
+		// don't apply forward force if the fictional handbrake is pressed
 		if ( glfwGetKey( g_mainWindow, GLFW_KEY_LEFT_SHIFT ) != GLFW_PRESS )
 		{
 			if ( glfwGetKey( g_mainWindow, GLFW_KEY_W ) == GLFW_PRESS )
 			{
 				b2Vec2 force = m_body->GetWorldVector( b2Vec2( 0.0f, m_forwardForce ) );
 				b2Vec2 point = m_body->GetWorldPoint( b2Vec2( 0.0f, -3.0f ) );
+				m_body->ApplyForce( force, point, true );
+			}
+
+			if ( glfwGetKey( g_mainWindow, GLFW_KEY_S ) == GLFW_PRESS )
+			{
+				const b2Vec2 force = m_body->GetWorldVector( b2Vec2( 0.0f, m_backwardForce ) );
+				const b2Vec2 point = m_body->GetWorldPoint( b2Vec2( 0.0f, 3.0f ) );
 				m_body->ApplyForce( force, point, true );
 			}
 		}
@@ -77,16 +90,6 @@ public:
 			if ( glfwGetKey( g_mainWindow, GLFW_KEY_D ) == GLFW_PRESS )
 			{
 				m_body->ApplyTorque( -m_turnForce, true );
-			}
-		}
-
-		if ( glfwGetKey( g_mainWindow, GLFW_KEY_LEFT_SHIFT ) != GLFW_PRESS )
-		{
-			if ( glfwGetKey( g_mainWindow, GLFW_KEY_S ) == GLFW_PRESS )
-			{
-				const b2Vec2 force = m_body->GetWorldVector( b2Vec2( 0.0f, m_backwardForce ) );
-				const b2Vec2 point = m_body->GetWorldPoint( b2Vec2( 0.0f, 3.0f ) );
-				m_body->ApplyForce( force, point, true );
 			}
 		}
 	}
@@ -168,7 +171,7 @@ public:
 		m_body->GetWorld()->DestroyBody( m_body );
 	}
 
-	void update()
+	void update( bool showDebug )
 	{
 		// Turn logic
 		// 
@@ -207,7 +210,7 @@ public:
 
 		for ( int i = 0; i < m_tires.size(); ++i )
 		{
-			m_tires[ i ]->update();
+			m_tires[ i ]->update( showDebug );
 		}
 	}
 
@@ -219,7 +222,7 @@ public:
 	b2Body* m_body;
 
 	int m_turnRate{ 200 };
-	int m_turnAngle{ 35 };
+	int m_turnAngle{ 32 };
 };
 
 class CarDemo : public Test
@@ -232,6 +235,7 @@ public:
 
 		const float k_restitution = 0.4f;
 
+		// track setup
 		b2Body* ground;
 		{
 			b2BodyDef bd;
@@ -245,23 +249,43 @@ public:
 			sd.density = 0.0f;
 			sd.restitution = k_restitution;
 
-			// Left vertical
-			shape.SetTwoSided( b2Vec2( -80.0f, -40.0f ), b2Vec2( -80.0f, 80.0f ) );
+			shape.SetTwoSided( b2Vec2( -110.0f, -100.0f ), b2Vec2( -110.0f, 100.0f ) );
 			ground->CreateFixture( &sd );
 
-			shape.SetTwoSided( b2Vec2( -10.0f, -10.0f ), b2Vec2( -10.0f, 10.0f ) );
+			shape.SetTwoSided( b2Vec2( -75.0f, -75.0f ), b2Vec2( -75.0f, 75.0f ) );
 			ground->CreateFixture( &sd );
 
-			// Right vertical
-			shape.SetTwoSided( b2Vec2( 40.0f, -40.0f ), b2Vec2( 40.0f, 40.0f ) );
+			shape.SetTwoSided( b2Vec2( -40.0f, -100.0f ), b2Vec2( -40.0f, -40.0f ) );
 			ground->CreateFixture( &sd );
 
-			// Top horizontal
-			shape.SetTwoSided( b2Vec2( -40.0f, 40.0f ), b2Vec2( 40.0f, 40.0f ) );
+			shape.SetTwoSided( b2Vec2( -110.0f, -100.0f ), b2Vec2( -40.0f, -100.0f ) );
 			ground->CreateFixture( &sd );
 
-			// Bottom horizontal
-			shape.SetTwoSided( b2Vec2( -40.0f, -40.0f ), b2Vec2( 40.0f, -40.0f ) );
+			shape.SetTwoSided( b2Vec2( -55.0f, -20.0f ), b2Vec2( -55.0f, 20.0f ) );
+			ground->CreateFixture( &sd );
+
+			shape.SetTwoSided( b2Vec2( -10.0f, -20.0f ), b2Vec2( -10.0f, 20.0f ) );
+			ground->CreateFixture( &sd );
+
+			shape.SetTwoSided( b2Vec2( -55.0f, -20.0f ), b2Vec2( -10.0f, -20.0f ) );
+			ground->CreateFixture( &sd );
+
+			shape.SetTwoSided( b2Vec2( -55.0f, 20.0f ), b2Vec2( -10.0f, 20.0f ) );
+			ground->CreateFixture( &sd );
+
+			shape.SetTwoSided( b2Vec2( 25.0f, -40.0f ), b2Vec2( 25.0f, 100.0f ) );
+			ground->CreateFixture( &sd );
+
+			shape.SetTwoSided( b2Vec2( -40.0f, 40.0f ), b2Vec2( 25.0f, 40.0f ) );
+			ground->CreateFixture( &sd );
+
+			shape.SetTwoSided( b2Vec2( -40.0f, -40.0f ), b2Vec2( 25.0f, -40.0f ) );
+			ground->CreateFixture( &sd );
+
+			shape.SetTwoSided( b2Vec2( -75.0f, 75.0f ), b2Vec2( 0.0f, 75.0f ) );
+			ground->CreateFixture( &sd );
+
+			shape.SetTwoSided( b2Vec2( -110.0f, 100.0f ), b2Vec2( 25.0f, 100.0f ) );
 			ground->CreateFixture( &sd );
 		}
 
@@ -272,10 +296,10 @@ public:
 
 	void Step( Settings& settings ) override
 	{
-		g_debugDraw.DrawString( 5, m_textLine, "Forward (W), Turn (A) and (D), Backwards (S)" );
+		g_debugDraw.DrawString( 5, m_textLine, "Forward (W), Turn (A) and (D), Backwards (S), Drift (LShift)" );
 		m_textLine += m_textIncrement;
 
-		m_car->update();
+		m_car->update( showDebug );
 
 		uint8_t index{ 0 };
 		for ( Tire* tire : m_car->m_tires )
@@ -295,6 +319,8 @@ public:
 	}
 
 	Car* m_car;
+
+	bool showDebug{ true };
 };
 
 static int testIndex = RegisterTest( "Custom", "Car Demo", CarDemo::Create );
