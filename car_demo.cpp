@@ -247,19 +247,18 @@ public:
 		m_frontLeftJoint->SetLimits( newAngle, newAngle );
 		m_frontRightJoint->SetLimits( newAngle, newAngle );
 
-
 		for ( int i = 0; i < m_tires.size(); ++i )
 		{
 			m_tires[ i ]->update( showDebug );
 		}
 	}
 
-	// FIXME: LH: these all need renaming
+	// FIXME: LH: these all need renaming - e.g. wanderPoint is just velocity
 	float wander( bool showDebug )
 	{
-		b2Vec2 wanderPoint = m_body->GetWorldVector( m_nextTarget );
+		b2Vec2 wanderPoint = m_nextTarget;
 
-		// if car has no next target, wander randomly 
+		// if there's no next target, wander randomly 
 		if ( m_nextTarget == b2Vec2_zero )
 		{
 			// get a point in front of the car
@@ -282,7 +281,20 @@ public:
 			wanderPoint += avoidanceVector;
 		}
 
-		wanderPoint += m_body->GetLinearVelocity();
+		float wanderPointMagnitude = wanderPoint.Normalize();
+		wanderPointMagnitude = b2Clamp( wanderPointMagnitude, -m_maxVelocity, m_maxVelocity );
+		wanderPoint *= wanderPointMagnitude;
+
+		//arrival force calculations here?
+		if ( m_nextTarget != b2Vec2_zero )
+		{
+			const b2Vec2 distanceToTarget = m_nextTarget - m_body->GetPosition();
+			if ( distanceToTarget.Length() < m_arrivalDistance )
+			{
+				float wanderPointMagnitude = wanderPoint.Normalize();
+				wanderPoint *= m_maxVelocity * ( distanceToTarget.Length() / m_arrivalDistance );
+			}
+		}
 
 		m_body->ApplyForce( wanderPoint , m_body->GetWorldPoint( b2Vec2( 0.0f, -3.0f ) ), true );
 
@@ -291,9 +303,15 @@ public:
 		double turnAngle{ 0 };
 		b2Vec2 forwardVector = m_body->GetWorldVector( m_wanderLocalPoint );
 		double dot = b2Dot( wanderPoint, forwardVector );
-		turnAngle = acos( dot / (wanderPoint.Length() * forwardVector.Length()) );
 
-		turnAngle = b2Clamp( turnAngle, -M_PI / 4.0f, M_PI / 4.0f );
+		double wLength = wanderPoint.Length();
+		double fLength = forwardVector.Length();
+
+		double mag = wLength * fLength;
+
+		turnAngle = acos( dot / mag );//(wanderPoint.Length() * forwardVector.Length()) );
+
+		turnAngle = b2Clamp( turnAngle, -M_PI / 2.0f, M_PI / 2.0f );
 		
 		// FIXME: LH:	this is a bit hacky - basically the angle is always positive from the 
 		//				above calcualtion, but the rotation that needs to be applied to the tires
@@ -361,10 +379,6 @@ public:
 
 				//const float avoidScalar = b2Dot( m_raycastCallback.m_normal, m_raycastCallback.m_point );
 				//const b2Vec2 avoidVector = avoidScalar * m_raycastCallback.m_point;
-
-
-				//const float dot = b2Dot( velocity, callback->m_normal );
-				// if dot is > or < some value indicating it's in the opposite direction - invert the normal (or a local copy)
 				
 				const b2Vec2 avoidVector = m_collisionAvoidanceForce * callback->m_normal;
 
@@ -384,35 +398,17 @@ public:
 		};
 
 		b2Vec2 avoidVector{ b2Vec2_zero };
+
+		if ( showDebug )
+		{
+			m_debugAvoidVector = b2Vec2_zero;
+		}
+
 		avoidVector += checkRaycastCollision( &m_raycastCallback );
 		avoidVector += checkRaycastCollision( &m_leftRaycastCallback );
 		avoidVector += checkRaycastCollision( &m_rightRaycastCallback );
 
 		return avoidVector;
-
-		//if ( m_raycastCallback.m_collisionHit )
-		//{
-		//	b2Vec2 velocity = m_body->GetLinearVelocity();
-
-		//	float avoidanceForce = 20;
-
-		//	//const float avoidScalar = b2Dot( m_raycastCallback.m_normal, m_raycastCallback.m_point );
-		//	//const b2Vec2 avoidVector = avoidScalar * m_raycastCallback.m_point;
-		//	const b2Vec2 avoidVector = avoidanceForce * m_raycastCallback.m_normal;
-
-		//	if ( showDebug )
-		//	{
-		//		m_debugAvoidVector = avoidVector;
-		//		m_debugAvoidPoint = m_raycastCallback.m_point;
-		//	}
-
-		//	// FIXME: LH: maybe do .Reset() & reset all the members as well?
-		//	m_raycastCallback.m_collisionHit = false;
-
-		//	return avoidVector;
-		//}
-
-		//return b2Vec2_zero;
 	}
 
 	// FIXME: LH: clear some of these debug values up when done
@@ -438,10 +434,11 @@ public:
 	b2Vec2				m_carFront{ 0, 10 };
 	b2Vec2				m_carRightFront{ 2.5, 7 };
 	b2Vec2				m_carLeftFront{ -2.5, 7 };
-
+	
 	b2Vec2				m_wanderLocalPoint{ 0, 30 };
 
 	b2Vec2				m_nextTarget{ b2Vec2_zero };
+	b2Vec2				m_distanceToNextTarget{ b2Vec2_zero };
 
 	b2World*			m_world{ nullptr };
 
@@ -458,7 +455,11 @@ public:
 	float				m_collisionAvoidanceForce{ 13 };
 	float				m_wanderRadius{ 5 };
 
+	float				m_arrivalDistance{ 25 };
+
 	float				m_wanderAngle{ -M_PI / 2 };
+
+	float				m_maxVelocity{ 30 };
 
 	// DEBUG values (used for drawing visual elements when showDebug == true)
 	float				m_debugTurnAngle{ 0 };
@@ -585,18 +586,24 @@ public:
 			g_debugDraw.DrawSegment( m_car->m_body->GetPosition() + m_car->m_body->GetWorldVector( m_car->m_carLeftFront ), m_car->m_body->GetPosition() + m_car->m_debugLeftRay, b2Color( 1, 255, 1, 1 ) );
 			g_debugDraw.DrawSegment( m_car->m_body->GetPosition(), m_car->m_body->GetPosition() + m_car->m_debugVelocityVector, b2Color( 1, 1, 255, 1 ) );
 
+			g_debugDraw.DrawSegment( m_car->m_body->GetPosition(), m_car->m_nextTarget, b2Color( 1, 1, 255, 1 ) );
+
 			g_debugDraw.DrawSegment( m_car->m_debugAvoidPoint, m_car->m_debugAvoidPoint + m_car->m_debugAvoidVector, b2Color( 1, 255, 1, 1 ) );
 
 			uint8_t index{ 0 };
 			for ( Tire* tire : m_car->m_tires )
 			{
-				g_debugDraw.DrawString( 6 + index, m_textLine, "Current lateralVelocityVector for car %d: %.3f, %.3f", index, tire->m_lastLateralVelocityVector.x, tire->m_lastLateralVelocityVector.y );
+				g_debugDraw.DrawString( 10, m_textLine, "Current lateralVelocityVector for car %d: %.3f, %.3f", index, tire->m_lastLateralVelocityVector.x, tire->m_lastLateralVelocityVector.y );
 				m_textLine += m_textIncrement;
 
 				g_debugDraw.DrawSegment( tire->m_body->GetPosition(), tire->m_body->GetPosition() + tire->m_lastLateralVelocityVector, b2Color( 255, 1, 1 ) );
 			}
 
-			g_debugDraw.DrawString( 7 + index, m_textLine, "Current WanderAngle: %.3f (Rad), %.3f (Deg); Current TurnAngle: %.3f (Rad), %.3f (Deg)", m_car->m_wanderAngle, m_car->m_wanderAngle * ( 180 / M_PI ), m_car->m_debugTurnAngle, m_car->m_debugTurnAngle * (180 / M_PI) );
+			g_debugDraw.DrawString( 10, m_textLine, "Current WanderAngle: %.3f (Rad), %.3f (Deg); Current TurnAngle: %.3f (Rad), %.3f (Deg)", m_car->m_wanderAngle, m_car->m_wanderAngle * ( 180 / M_PI ), m_car->m_debugTurnAngle, m_car->m_debugTurnAngle * (180 / M_PI) );
+			m_textLine += m_textIncrement;
+
+			g_debugDraw.DrawString( 10, m_textLine, "Car next target: %.3f, %.3f", m_car->m_nextTarget.x, m_car->m_nextTarget.y );
+			m_textLine += m_textIncrement;
 		}
 
 		Test::Step( settings );
@@ -604,9 +611,9 @@ public:
 
 	virtual void MouseDown( const b2Vec2& p ) override
 	{
-		m_car->m_nextTarget = p;
-
 		Test::MouseDown( p );
+
+		m_car->m_nextTarget = p;
 	}
 
 	static Test* Create()
