@@ -19,16 +19,22 @@ public:
 	// return				 0 = terminate the ray cast
 	// return	fraction (0,1) = clip the ray to this point
 	// return				 1 = don't clip the ray and continue
-	virtual float ReportFixture(b2Fixture* fixture, const b2Vec2& point, const b2Vec2& normal, float fraction) override
+	virtual float ReportFixture( b2Fixture* fixture, const b2Vec2& point, const b2Vec2& normal, float fraction ) override
 	{
 		m_collisionHit = true;
 		m_point = point;
 		m_normal = normal;
 		m_fraction = fraction;
 
-		// FIXME: LH:	try stopping raycast & catching return value
-		//				try continuing raycast in some form & just creating the raycast in the constructor maybe?
 		return 0.5f;
+	}
+
+	void Reset()
+	{
+		m_collisionHit = false;
+		m_point = b2Vec2_zero;
+		m_normal = b2Vec2_zero;
+		m_fraction = 0;
 	}
 
 	bool	m_collisionHit{ false };
@@ -236,7 +242,8 @@ public:
 			desiredAngle = -angle;
 		}
 
-		// FIXME: LH: add an if here, so we don't always just take the wander angle
+		// FIXME: LH: add an if here, so we don't always just take the wander angle;
+		// FIXME2: LH: maybe get a wanderVeelocity as well to apply afterwards?
 		desiredAngle = wander( showDebug );
 
 		const float currentAngle = m_frontLeftJoint->GetJointAngle();
@@ -253,16 +260,15 @@ public:
 		}
 	}
 
-	// FIXME: LH: these all need renaming - e.g. wanderPoint is just velocity
 	float wander( bool showDebug )
 	{
-		b2Vec2 wanderPoint = m_nextTarget;
+		b2Vec2 wanderVelocity = m_nextTarget;
 
 		// if there's no next target, wander randomly 
 		if ( m_nextTarget == b2Vec2_zero )
 		{
 			// get a point in front of the car
-			wanderPoint = m_body->GetWorldVector( m_wanderLocalPoint );
+			wanderVelocity = m_body->GetWorldVector( m_wanderDirection );
 
 			// calculate a point on a circle around the wanderPoint
 			m_wanderAngle += RandomFloat( -0.1f, 0.1f );
@@ -272,51 +278,53 @@ public:
 
 			// add the current velocity and the new wander vector
 			const b2Vec2 circleVector{ x,y };
-			wanderPoint += circleVector;
+			wanderVelocity += circleVector;
 		}
 
 		const b2Vec2 avoidanceVector = avoidCollisions( showDebug );
 		if ( avoidanceVector != b2Vec2_zero )
 		{
-			wanderPoint += avoidanceVector;
+			wanderVelocity += avoidanceVector;
 		}
 
-		float wanderPointMagnitude = wanderPoint.Normalize();
-		wanderPointMagnitude = b2Clamp( wanderPointMagnitude, -m_maxVelocity, m_maxVelocity );
-		wanderPoint *= wanderPointMagnitude;
+		// Clamp the velocity to a max magnitude
+		float wanderVelocityMagnitude = wanderVelocity.Normalize();
+		wanderVelocityMagnitude = b2Clamp( wanderVelocityMagnitude, -m_maxVelocity, m_maxVelocity );
+		wanderVelocity *= wanderVelocityMagnitude;
 
-		//arrival force calculations here?
+		// Reduce velocity gradually, if within arrival distance of next target
 		if ( m_nextTarget != b2Vec2_zero )
 		{
 			const b2Vec2 distanceToTarget = m_nextTarget - m_body->GetPosition();
 			if ( distanceToTarget.Length() < m_arrivalDistance )
 			{
-				float wanderPointMagnitude = wanderPoint.Normalize();
-				wanderPoint *= m_maxVelocity * ( distanceToTarget.Length() / m_arrivalDistance );
+				float wanderPointMagnitude = wanderVelocity.Normalize();
+				wanderVelocity *= m_maxVelocity * ( distanceToTarget.Length() / m_arrivalDistance );
 			}
 		}
 
-		m_body->ApplyForce( wanderPoint , m_body->GetWorldPoint( b2Vec2( 0.0f, -3.0f ) ), true );
+		m_body->ApplyForce( wanderVelocity, m_body->GetWorldPoint( b2Vec2( 0.0f, -3.0f ) ), true );
 
 		// calculate turn angle vector to return to tires
-		// (turn angle = angle between wanderVector & car forward vector) 
+		// (turn angle = angle between wanderVelocity & car forward vector)
 		double turnAngle{ 0 };
-		b2Vec2 forwardVector = m_body->GetWorldVector( m_wanderLocalPoint );
-		double dot = b2Dot( wanderPoint, forwardVector );
+		b2Vec2 forwardVector = m_body->GetWorldVector( m_wanderDirection );
+		double dot = b2Dot( wanderVelocity, forwardVector );
 
-		double wLength = wanderPoint.Length();
-		double fLength = forwardVector.Length();
+		const double wLength = wanderVelocity.Length();
+		const double fLength = forwardVector.Length();
+		const double mag = wLength * fLength;
 
-		double mag = wLength * fLength;
+		turnAngle = acos( dot / mag );
 
-		turnAngle = acos( dot / mag );//(wanderPoint.Length() * forwardVector.Length()) );
-
+		// clamp turn angle within some realistic car tire angles
 		turnAngle = b2Clamp( turnAngle, -M_PI / 2.0f, M_PI / 2.0f );
 		
-		// FIXME: LH:	this is a bit hacky - basically the angle is always positive from the 
+		// FIXME LH:	this is a bit hacky - basically the angle is always positive from the 
 		//				above calcualtion, but the rotation that needs to be applied to the tires
-		//				is +ve to the right, and -ve to the left, so we fudge it
-		b2Vec2 turnDirection = wanderPoint - forwardVector;
+		//				is +ve to the right, and -ve to the left, so we fudge it;
+		//				Is there a way to get it so it just goes negative and we don't need to do this?
+		b2Vec2 turnDirection = wanderVelocity - forwardVector;
 		b2Vec2 localTurnDirection = m_body->GetLocalVector( turnDirection );
 		if( localTurnDirection.x > 0 && turnAngle > 0 )
 		{
@@ -325,12 +333,32 @@ public:
 
 		if ( showDebug )
 		{
-			m_debugWanderVector = wanderPoint;
+			m_debugWanderVector = wanderVelocity;
 			m_debugVelocityVector = m_body->GetLinearVelocity();
 			m_debugTurnAngle = turnAngle;
 		}
 
 		return turnAngle;
+	}
+
+	b2Vec2 checkRaycastCollision( RaycastCallback* callback, bool showDebug )
+	{
+		if ( callback && callback->m_collisionHit )
+		{
+			const b2Vec2 avoidVector = m_collisionAvoidanceForce * callback->m_normal;
+
+			if ( showDebug )
+			{
+				m_debugAvoidVector = avoidVector;
+				m_debugAvoidPoint = callback->m_point;
+			}
+
+			callback->Reset();
+
+			return avoidVector;
+		}
+
+		return b2Vec2_zero;
 	}
 
 	b2Vec2 avoidCollisions( bool showDebug )
@@ -371,32 +399,6 @@ public:
 		m_world->RayCast( &m_rightRaycastCallback, r1, r2 );
 		m_world->RayCast( &m_leftRaycastCallback, l1, l2 );
 
-		auto checkRaycastCollision = [&]( RaycastCallback* callback ) -> b2Vec2
-		{
-			if ( callback->m_collisionHit )
-			{
-				b2Vec2 velocity = m_body->GetLinearVelocity();
-
-				//const float avoidScalar = b2Dot( m_raycastCallback.m_normal, m_raycastCallback.m_point );
-				//const b2Vec2 avoidVector = avoidScalar * m_raycastCallback.m_point;
-				
-				const b2Vec2 avoidVector = m_collisionAvoidanceForce * callback->m_normal;
-
-				if ( showDebug )
-				{
-					m_debugAvoidVector = avoidVector;
-					m_debugAvoidPoint = callback->m_point;
-				}
-
-				// FIXME: LH: maybe do .Reset() & reset all the members as well?
-				callback->m_collisionHit = false;
-
-				return avoidVector;
-			}
-
-			return b2Vec2_zero;
-		};
-
 		b2Vec2 avoidVector{ b2Vec2_zero };
 
 		if ( showDebug )
@@ -404,9 +406,9 @@ public:
 			m_debugAvoidVector = b2Vec2_zero;
 		}
 
-		avoidVector += checkRaycastCollision( &m_raycastCallback );
-		avoidVector += checkRaycastCollision( &m_leftRaycastCallback );
-		avoidVector += checkRaycastCollision( &m_rightRaycastCallback );
+		avoidVector += checkRaycastCollision( &m_raycastCallback, showDebug );
+		avoidVector += checkRaycastCollision( &m_leftRaycastCallback, showDebug );
+		avoidVector += checkRaycastCollision( &m_rightRaycastCallback, showDebug );
 
 		return avoidVector;
 	}
@@ -435,7 +437,7 @@ public:
 	b2Vec2				m_carRightFront{ 2.5, 7 };
 	b2Vec2				m_carLeftFront{ -2.5, 7 };
 	
-	b2Vec2				m_wanderLocalPoint{ 0, 30 };
+	b2Vec2				m_wanderDirection{ 0, 30 };
 
 	b2Vec2				m_nextTarget{ b2Vec2_zero };
 	b2Vec2				m_distanceToNextTarget{ b2Vec2_zero };
@@ -544,6 +546,8 @@ public:
 			shape.SetTwoSided( b2Vec2( -110.0f, 100.0f ), b2Vec2( 25.0f, 100.0f ) );
 			ground->CreateFixture( &sd );
 
+			// LH: add these somewhere in the proc gen thing
+
 			// add a cavalcade of pushable objects in that lil' nook and cranny in the middle of the track
 			//for ( int32 i = 0; i < 300; ++i )
 			//{
@@ -577,19 +581,22 @@ public:
 
 		m_car->update( showDebug );
 
-
 		if ( showDebug )
 		{
+			// a bunch of debug vectors for the wandering & velocity vectors, as well as the 3 raycasts for collision detection
 			g_debugDraw.DrawSegment( m_car->m_body->GetPosition(), m_car->m_body->GetPosition() + m_car->m_debugWanderVector, b2Color( 255, 1, 1 ) );
 			g_debugDraw.DrawSegment( m_car->m_body->GetPosition() + m_car->m_body->GetWorldVector( m_car->m_carFront ), m_car->m_body->GetPosition() + m_car->m_debugFrontRay, b2Color( 1, 255, 1, 1 ) );
 			g_debugDraw.DrawSegment( m_car->m_body->GetPosition() + m_car->m_body->GetWorldVector( m_car->m_carRightFront ), m_car->m_body->GetPosition() + m_car->m_debugRightRay, b2Color( 1, 255, 1, 1 ) );
 			g_debugDraw.DrawSegment( m_car->m_body->GetPosition() + m_car->m_body->GetWorldVector( m_car->m_carLeftFront ), m_car->m_body->GetPosition() + m_car->m_debugLeftRay, b2Color( 1, 255, 1, 1 ) );
 			g_debugDraw.DrawSegment( m_car->m_body->GetPosition(), m_car->m_body->GetPosition() + m_car->m_debugVelocityVector, b2Color( 1, 1, 255, 1 ) );
 
+			// straight line between the car and the next target, if there is one
 			g_debugDraw.DrawSegment( m_car->m_body->GetPosition(), m_car->m_nextTarget, b2Color( 1, 1, 255, 1 ) );
 
+			// a vector showing the force applied to the car, when avoiding collision (from collision point outwards, usually)
 			g_debugDraw.DrawSegment( m_car->m_debugAvoidPoint, m_car->m_debugAvoidPoint + m_car->m_debugAvoidVector, b2Color( 1, 255, 1, 1 ) );
 
+			// vectors showing the lateral velocity forces applied to tires, when turning/driving around
 			uint8_t index{ 0 };
 			for ( Tire* tire : m_car->m_tires )
 			{
@@ -599,6 +606,7 @@ public:
 				g_debugDraw.DrawSegment( tire->m_body->GetPosition(), tire->m_body->GetPosition() + tire->m_lastLateralVelocityVector, b2Color( 255, 1, 1 ) );
 			}
 
+			// extra debug info strings
 			g_debugDraw.DrawString( 10, m_textLine, "Current WanderAngle: %.3f (Rad), %.3f (Deg); Current TurnAngle: %.3f (Rad), %.3f (Deg)", m_car->m_wanderAngle, m_car->m_wanderAngle * ( 180 / M_PI ), m_car->m_debugTurnAngle, m_car->m_debugTurnAngle * (180 / M_PI) );
 			m_textLine += m_textIncrement;
 
