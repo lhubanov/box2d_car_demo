@@ -339,7 +339,7 @@ public:
 		turnAngle = acos( dot / mag );
 
 		// clamp turn angle within some realistic car tire angles
-		turnAngle = b2Clamp( turnAngle, -M_PI / 2.0f, M_PI / 2.0f );
+		turnAngle = b2Clamp( turnAngle, -M_PI / 2.8f, M_PI / 2.8f );
 		
 		// FIXME LH:	this is a bit hacky - basically the angle is always positive from the 
 		//				above calcualtion, but the rotation that needs to be applied to the tires
@@ -478,7 +478,7 @@ public:
 	b2Vec2				m_carRightFront{ 2.5, 7 };
 	b2Vec2				m_carLeftFront{ -2.5, 7 };
 	
-	b2Vec2				m_wanderDirection{ 0, 30 };
+	b2Vec2				m_wanderDirection{ 0, 38 };
 
 	b2Vec2				m_nextTarget{ b2Vec2_zero };
 	b2Vec2				m_distanceToNextTarget{ b2Vec2_zero };
@@ -495,14 +495,14 @@ public:
 	int					m_turnAngle{ 32 };
 
 	float				m_rayLength{ 10 };
-	float				m_collisionAvoidanceForce{ 20 };
+	float				m_collisionAvoidanceForce{ 19 };
 	float				m_wanderRadius{ 5 };
 
 	float				m_arrivalDistance{ 25 };
 
 	float				m_wanderAngle{ -M_PI / 2 };
 
-	float				m_maxVelocity{ 30 };
+	float				m_maxVelocity{ 38 };
 
 	// DEBUG values (used for drawing visual elements when showDebug == true)
 	float				m_debugTurnAngle{ 0 };
@@ -516,7 +516,7 @@ class Track;
 
 namespace constants
 {
-	constexpr int8_t TRACK_POINT_COUNT{ 50 };
+	constexpr int8_t TRACK_POINT_COUNT{ 15 };
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -664,7 +664,7 @@ public:
 			prev = outerPoint;
 		}
 
-		m_startingPoint = b2Vec2( m_points[0].x, m_points[0].y-25 );
+		m_startingPoint = b2Vec2( m_points[0].x, m_points[0].y - m_roadSize/4 );
 	}
 
 	b2Vec2		m_startingPoint{ b2Vec2_zero };
@@ -672,7 +672,7 @@ public:
 
 	Rule*		m_rules[ 1 ];
 
-	float		m_roadSize{ 50.0f };
+	float		m_roadSize{ 35.0f };
 	int32_t		m_maxWidthHeight{ 150 };
 	uint32_t	m_debugSeed{ 0 };
 };
@@ -870,11 +870,11 @@ public:
 	/// Mouse click override to set car target manually if needed
 	/// </summary>
 	/// <param name="p"> Mouse position </param>
-	virtual void MouseDown( const b2Vec2& p ) override
-	{
-		Test::MouseDown( p );
-		m_car->m_nextTarget = p;
-	}
+	//virtual void MouseDown( const b2Vec2& p ) override
+	//{
+	//	Test::MouseDown( p );
+	//	m_car->m_nextTarget = p;
+	//}
 
 	static Test* Create()
 	{
