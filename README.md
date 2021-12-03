@@ -4,12 +4,12 @@
 
 The demo is a basic example of top-down car physics and the linear algebra involved in 2D top-down car controls.
 
-![](https://giphy.com/gifs/xd17dxskxZkAquKvqR)
+![Gif missing](https://media.giphy.com/media/xd17dxskxZkAquKvqR/giphy.gif)
 
 
 Additionally, the demo also contains an application of the Wandering and Collision Avoidance steering behaviours, from Craig Reynolds' [paper](https://www.red3d.com/cwr/steer/gdc99/) form the late 90s. The AI steering example here is a bit different from the general one in the paper, as most of the calculations are in terms of the car controls and forces used here.
 
-![](https://giphy.com/gifs/W67WftD0f53rKGoEHb)
+![Gif missing](https://media.giphy.com/media/W67WftD0f53rKGoEHb/giphy.gif)
 
 
 Lastly, the demo also generates looping race tracks on every run. The procedural generation is seed-based, so if interested in repeating some tracks - the seed is shown on screen and can be set in code (I did not bother creating UI to input a seed, as all the generation is done within constructors). 
@@ -18,7 +18,7 @@ To generate the tracks themselves, the code applies a [Convex Hull](https://en.w
 
 
 
-###### Note: 
+### Note: 
 I created this project with learning purposes mostly - to revise some core linear algebra, as well as learn more about Box2D and physics engines in general. I don't intend to expand and maintain this in the long term. 
 
 Do, however, feel free to raise any issues if any of the example is outright wrong, misleading, or broken - I want to make sure it's a good example. 
