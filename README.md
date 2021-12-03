@@ -1,4 +1,5 @@
 # Box2D top-down car demo
+-------------------------------
 
 [Box2D v2.4.1](https://github.com/erincatto/box2d/releases/tag/v2.4.1) was used to create the example and is meant to be used within the Box2D Testbed. 
 
@@ -18,12 +19,13 @@ To generate the tracks themselves, the code applies a [Convex Hull](https://en.w
 
 
 
-### Note: 
+##### Note: 
+-------------------------------
 I created this project with learning purposes mostly - to revise some core linear algebra, as well as learn more about Box2D and physics engines in general. I don't intend to expand and maintain this in the long term. 
 
 Do, however, feel free to raise any issues if any of the example is outright wrong, misleading, or broken - I want to make sure it's a good example. 
 
-Alternatively, I can be found @elhubanov on twitter - feel free to DM me there as well if any issues, or just to chat.
+Alternatively, I can be found [@elhubanov](https://twitter.com/elhubanov) on twitter - feel free to DM there as well if any issues, or just to chat.
 
 
 Usage/Building
